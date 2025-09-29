@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "OpenCC 网页文字转换",
+  "version": "0.1.0",
+  "description": "使用 OpenCC 在网页上进行简繁与地区用词转换。",
+  "action": {
+    "default_title": "OpenCC 转换设置",
+    "default_popup": "extension/popup.html"
+  },
+  "icons": {
+    "16": "extension/icon-16.png",
+    "48": "extension/icon-48.png",
+    "128": "extension/icon-128.png"
+  },
+  "permissions": [
+    "storage",
+    "scripting",
+    "activeTab"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["extension/vendor/opencc.full.umd.js", "extension/content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "background": {
+    "service_worker": "extension/background.js",
+    "type": "module"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "extension/vendor/opencc.full.umd.js"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
+

@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenCC 设置</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="row">
+      <label>
+        <input type="checkbox" id="enabled" /> 启用转换
+      </label>
+    </div>
+    <div class="row">
+      <label for="mode">转换模式</label>
+      <select id="mode">
+        <option value="s2t">简 → 繁（通用）</option>
+        <option value="s2tw">简 → 台湾正体</option>
+        <option value="s2hk">简 → 香港繁体</option>
+        <option value="s2twp">简 → 台湾常用词</option>
+        <option value="t2s">繁 → 简（通用）</option>
+        <option value="t2sp">繁 → 简（大陆常用词）</option>
+      </select>
+    </div>
+    <div class="row small">更改后自动生效；刷新页面可重新遍历。</div>
+    <script src="popup.js"></script>
+  </body>
+</html>
+
+
