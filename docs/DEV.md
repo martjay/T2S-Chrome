@@ -26,6 +26,7 @@
   - `t2s`/`t2cn` → `{ from: 'tw', to: 'cn' }`
 - `replaceInNode(node)`：对文本节点执行转换并写回。
 - `restoreInNode(node)` / `restoreAll()`：从 `WeakMap` 读取并恢复原文；禁用或切换模式时先恢复，避免二次转换。
+- `hasTargetCharacterSet(text, mode)` / `scanForTargetChars(mode)`：智能检测页面是否包含目标字符集（简体/繁体），无目标字符时跳过转换以节省性能。
 - `applyAll()`：按当前设置创建转换器并遍历整页替换。
 - `MutationObserver` 回调：监听新增节点并增量替换。
 - URL 变化与可见性：拦截 `history.pushState/replaceState` 并监听 `popstate/hashchange/pageshow/visibilitychange`，在 SPA/站内跳转时先 `restoreAll()` 再 `applyAll()`，避免二次转换并确保新页面内容被应用。

@@ -4,9 +4,26 @@ const defaultSettings = {
   mode: 's2t' // s2t, t2s, s2tw, s2hk, s2twp, t2cn, cn2t
 };
 
+let isUnloading = false;
+
 function getSettings() {
   return new Promise(resolve => {
-    chrome.storage.sync.get(defaultSettings, resolve);
+    // 在扩展被重载/禁用或页面卸载时，直接回退默认值，避免 context invalidated
+    try {
+      if (isUnloading || !chrome.runtime || !chrome.runtime.id) {
+        resolve({ ...defaultSettings });
+        return;
+      }
+      chrome.storage.sync.get(defaultSettings, (res) => {
+        if (!chrome.runtime || !chrome.runtime.id || (chrome.runtime.lastError && chrome.runtime.lastError.message)) {
+          resolve({ ...defaultSettings });
+          return;
+        }
+        resolve(res || { ...defaultSettings });
+      });
+    } catch (_) {
+      resolve({ ...defaultSettings });
+    }
   });
 }
 
@@ -30,6 +47,56 @@ function shouldSkip(node) {
     if (el.closest('input, textarea, [contenteditable="true"]')) return true;
   }
   return false;
+}
+
+// 检测文本是否包含目标字符集（简体/繁体）
+function hasTargetCharacterSet(text, mode) {
+  if (!text) return false;
+  // 简体中文字符范围（基本汉字）
+  const simplifiedPattern = /[\u4e00-\u9fff]/;
+  // 繁体中文字符范围（基本汉字 + 扩展A）
+  const traditionalPattern = /[\u4e00-\u9fff\u3400-\u4dbf]/;
+  
+  switch (mode) {
+    case 's2t':
+    case 's2tw':
+    case 's2hk':
+    case 's2twp':
+    case 'cn2t':
+      // 简体转繁体：检测是否包含简体字
+      return simplifiedPattern.test(text);
+    case 't2s':
+    case 't2cn':
+    case 't2sp':
+      // 繁体转简体：检测是否包含繁体字
+      return traditionalPattern.test(text);
+    default:
+      return true; // 默认执行转换
+  }
+}
+
+// 快速扫描页面是否包含目标字符
+function scanForTargetChars(mode) {
+  const walker = document.createTreeWalker(
+    document.documentElement || document.body,
+    NodeFilter.SHOW_TEXT,
+    {
+      acceptNode(node) {
+        const parent = node.parentElement;
+        if (!parent || shouldSkip(parent)) return NodeFilter.FILTER_REJECT;
+        const text = node.nodeValue;
+        if (!text || !text.trim()) return NodeFilter.FILTER_REJECT;
+        return hasTargetCharacterSet(text, mode) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      }
+    }
+  );
+  
+  // 只检查前几个文本节点，避免全页扫描影响性能
+  let count = 0;
+  while (walker.nextNode() && count < 10) {
+    count++;
+  }
+  return count > 0;
 }
 
 function isValidRoot(root) {
@@ -59,6 +126,8 @@ let converter = null;
 let lastSettings = { ...defaultSettings };
 // 记录每个文本节点的原始内容，禁用或切换模式时可恢复
 let originalTextMap = new WeakMap();
+// 智能检测：避免对无目标字符的页面执行转换
+let hasTargetChars = false;
 
 function createConverterByMode(mode) {
   // 依赖 opencc-js 的预设：full 里包含多地区字典与最长匹配逻辑
@@ -91,6 +160,7 @@ function createConverterByMode(mode) {
 
 function replaceInNode(node) {
   if (!converter) return;
+  if (!hasTargetChars) return; // 智能跳过：无目标字符时不执行转换
   const original = node.nodeValue;
   if (!originalTextMap.has(node)) {
     originalTextMap.set(node, original);
@@ -120,6 +190,14 @@ async function applyAll() {
   const { enabled, mode } = await getSettings();
   lastSettings = { enabled, mode };
   if (!enabled) return;
+  
+  // 智能检测：先扫描页面是否包含目标字符
+  hasTargetChars = scanForTargetChars(mode);
+  if (!hasTargetChars) {
+    console.log(`[OpenCC] 页面未检测到${mode.includes('s2') ? '简体' : '繁体'}字符，跳过转换`);
+    return;
+  }
+  
   converter = createConverterByMode(mode);
   if (!converter) return;
   const run = () => walkTextNodes(document.body || document.documentElement, replaceInNode);
@@ -181,6 +259,14 @@ onSettingsChange(async () => {
   if (prev.mode !== mode || !prev.enabled) {
     restoreAll();
   }
+  
+  // 重新检测目标字符
+  hasTargetChars = scanForTargetChars(mode);
+  if (!hasTargetChars) {
+    console.log(`[OpenCC] 页面未检测到${mode.includes('s2') ? '简体' : '繁体'}字符，跳过转换`);
+    return;
+  }
+  
   converter = createConverterByMode(mode);
   if (!converter) return;
   walkTextNodes(document.body || document.documentElement, replaceInNode);
@@ -224,6 +310,8 @@ function initUrlChangeHandlers() {
     }
   });
   window.addEventListener('pageshow', () => applyAll());
+  window.addEventListener('pagehide', () => { isUnloading = true; });
+  window.addEventListener('beforeunload', () => { isUnloading = true; });
 }
 
 
