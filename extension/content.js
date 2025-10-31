@@ -128,6 +128,8 @@ let lastSettings = { ...defaultSettings };
 let originalTextMap = new WeakMap();
 // 智能检测：避免对无目标字符的页面执行转换
 let hasTargetChars = false;
+// 当前启用状态，用于快速检查
+let currentEnabled = false;
 
 function createConverterByMode(mode) {
   // 依赖 opencc-js 的预设：full 里包含多地区字典与最长匹配逻辑
@@ -159,9 +161,19 @@ function createConverterByMode(mode) {
 }
 
 function replaceInNode(node) {
-  if (!converter) return;
-  if (!hasTargetChars) return; // 智能跳过：无目标字符时不执行转换
+  // 必须同时满足：启用状态、有转换器、有目标字符
+  if (!currentEnabled || !converter || !hasTargetChars) return;
+  
   const original = node.nodeValue;
+  if (!original || !original.trim()) return;
+  
+  // 检查当前节点是否包含源语言字符（根据当前模式）
+  const { mode } = lastSettings;
+  if (!hasTargetCharacterSet(original, mode)) {
+    // 如果节点不包含源语言字符，跳过转换（避免误转换）
+    return;
+  }
+  
   if (!originalTextMap.has(node)) {
     originalTextMap.set(node, original);
   }
@@ -189,12 +201,20 @@ function restoreAll() {
 async function applyAll() {
   const { enabled, mode } = await getSettings();
   lastSettings = { enabled, mode };
-  if (!enabled) return;
+  currentEnabled = enabled; // 更新当前启用状态
+  
+  if (!enabled) {
+    // 禁用时：清除转换器并恢复原文
+    converter = null;
+    restoreAll();
+    return;
+  }
   
   // 智能检测：先扫描页面是否包含目标字符
   hasTargetChars = scanForTargetChars(mode);
   if (!hasTargetChars) {
     console.log(`[OpenCC] 页面未检测到${mode.includes('s2') ? '简体' : '繁体'}字符，跳过转换`);
+    converter = null; // 没有目标字符时也清除转换器
     return;
   }
   
@@ -210,7 +230,8 @@ async function applyAll() {
 
 // 监听 DOM 变化，动态替换
 const observer = new MutationObserver(mutations => {
-  if (!converter) return;
+  // 必须在启用状态且有转换器时才处理
+  if (!currentEnabled || !converter || !hasTargetChars) return;
   for (const m of mutations) {
     for (const node of m.addedNodes) {
       if (node.nodeType === Node.TEXT_NODE) {
@@ -247,10 +268,12 @@ onSettingsChange(async () => {
   const { enabled, mode } = await getSettings();
   const prev = lastSettings;
   lastSettings = { enabled, mode };
+  currentEnabled = enabled; // 更新当前启用状态
 
   if (!enabled) {
     // 关闭：停止应用并恢复原文
     converter = null;
+    hasTargetChars = false;
     restoreAll();
     return;
   }
@@ -264,6 +287,7 @@ onSettingsChange(async () => {
   hasTargetChars = scanForTargetChars(mode);
   if (!hasTargetChars) {
     console.log(`[OpenCC] 页面未检测到${mode.includes('s2') ? '简体' : '繁体'}字符，跳过转换`);
+    converter = null; // 没有目标字符时清除转换器
     return;
   }
   
